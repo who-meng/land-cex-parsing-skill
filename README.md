@@ -1,6 +1,6 @@
 # LAND CEX Parsing Skill
 
-此包包含 Skill 文档、Python 解析脚本、Windows x86/x64 LANDCex DLL、LANHE.sys，以及 comtypes、openpyxl、et_xmlfile 的离线安装包。Python 解释器需预先安装，推荐 Windows Python 3.12。
+此包包含 Skill 文档、Python 解析脚本、Windows x86/x64 LANDCex DLL、LANHE.sys，以及 comtypes 的离线安装包。Python 解释器需预先安装，推荐 Windows Python 3.12。
 
 读取和导出时自动处理显示格式：工步时间、测试时间和步骤时间显示为时分秒，按文件精度保留毫秒；工步模式在原列中显示工步名称。
 

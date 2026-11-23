@@ -12,5 +12,5 @@ for line in (wheels / "SHA256SUMS").read_text(encoding="ascii").splitlines():
         raise RuntimeError("Bundled dependency checksum mismatch: " + name)
 result = subprocess.run([sys.executable, "-m", "pip", "--isolated", "--disable-pip-version-check", "install",
     "--no-index", "--find-links", str(wheels), "--only-binary=:all:", "--no-compile",
-    "--target", str(root / "deps" / "1"), "comtypes==1.4.15", "openpyxl==3.1.5", "et_xmlfile==2.0.0"])
+    "--target", str(root / "deps" / "1"), "comtypes==1.4.15"])
 sys.exit(result.returncode)

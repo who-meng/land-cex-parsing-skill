@@ -12,7 +12,7 @@ with open_cex(source) as f:
         print(test_time, step_time)
 ```
 
-Excel 时长需要数值与格式配套，请使用 `export_xlsx`。自定义 Excel 若直接写入原始秒数，Excel 不会自动将其转换为 时分秒格式。
+表格布局由调用方决定。需要可计算的 Excel 时长时，将原始秒数除以 86400，配套设置 `[h]:mm:ss` 或 `[h]:mm:ss.000`；只需展示时可直接写入 `iter_export_rows` 的时间字符串。
 
 将本技能的 `scripts` 加入 `sys.path` 或 `PYTHONPATH` 后，可在 Windows 的 Python 3.12 中 `from land_cex import open_cex, process_files, CexError`。DLL 会临时调整进程工作目录和注册表映射，同一进程一次支持一个活动会话。封装的输入和 CSV 输出使用绝对路径。输入后缀可用 `.cex` 或 `.icex`，随 CEX 生成的索引文件可能无法独立读取。
 
@@ -25,7 +25,6 @@ Excel 时长需要数值与格式配套，请使用 `export_xlsx`。自定义 Ex
 | `f.rows(level)` | `GetRows` 返回指定层级的整数行数。`level` 可用 `cycle`、`step`、`rec`。 |
 | `f.columns(ids)` | `ids` 为非空且无重复的十进制 ID 列表或元组。按请求顺序返回 `id`、`description`、`unit`，由 SDK 提供。 |
 | `f.export_columns(level, *, extra_platforms=None)` | 返回当前文件在该层可导出的列，含 `id`、`read_id`、`description`、`unit` 和面向用户的 `header`。`id` 用于 `iter_export_rows`，组合字段的 `read_id` 为 `None`。工步模式列读取 `8194` 模式码，经 `GetDescriptionOfMode` 返回名称，如 `恒流放电`。需要含参数的完整描述时，使用 `f.iter_rows([8204])`。数值主参数可按工步读 `8209`，适用的第二参数可读 `8210`。动态通道按文件绑定数筛选。 |
-| `from cex_excel import export_xlsx`，`export_xlsx(f, output, *, extra_platforms=None, on_row=None, summary_ids=None)` | 写入循环、工步、记录和测试信息四张工作表。`tables` 中的 `cycle`、`step`、`rec`、`info` 各含 `rows` 和 `columns`。`output` 为新 `.xlsx` 绝对路径，记录表逐行统计见下方示例。 |
 | `f.iter_export_rows(level, ids=None, *, start=1, end=None, display_times=True, extra_platforms=None, on_row=None, summary_ids=None)` | 按请求顺序返回 已格式化的展示值，支持各层导出 ID、自动时长格式和组合字段。省略 `ids` 使用该层可导出的所有列。设 `display_times=False` 可获得秒数。 |
 | `f.iter_rows(ids, *, start=1, end=None)` | 在当前会话内流式读取同层字段，每行是与 `ids` 同序的 Python 列表，缺值为 `None`。默认读到该层末行。`start`、`end` 是含首尾的用户序号。内部调用 `GetDataEx`。 |
 | `f.export_csv(output, ids, *, start=1, end=None, on_row=None, summary_ids=None, display_times=True)` | 支持 `f.export_columns("rec")` 返回的全部记录层 ID，包括归属、状态和充放电分项。给出父目录已存在的新 CSV 绝对路径。`display_times=False` 输出数值秒。`on_row(行号, 值元组)` 在写每行时接收 `summary_ids` 指定的记录字段，省略 `summary_ids` 时接收导出字段。返回 `output`、`rows`、`columns`。CSV 使用 UTF-8 BOM，首列记录序号从 1 开始，缺值留空。成功退出 `with` 才发布文件。 |
@@ -68,13 +67,11 @@ with open_cex(source) as f:
         print(value, unit)
 ```
 
-`CexError.payload` 包含 `code`、`message`，SDK 错误可另附 `native_api`、`native_code`。`LoadData` 返回空句柄时，`message` 固定为“加载失败”，`native_code` 保留 DLL 返回的无符号 32 位整数，`native_message` 保留 DLL 说明或为 `null`。例如码 `24` 表示没有数据记录，文件头仍可用时可单独查询启动时间。见[加载错误码](load-errors.md)。Python 调用方可捕获该异常。支持的 1,985 个字段见[完整目录](fields.md)。通道绑定和数量约束见[动态通道](dynamic-fields.md)。
+`CexError.payload` 包含 `code`、`message`，SDK 错误可另附 `native_api`、`native_code`。`LoadData` 返回空句柄时，`message` 固定为“加载失败”，`native_code` 保留 DLL 返回的无符号 32 位整数，`native_message` 保留 DLL 说明或为 `null`。例如码 `24` 表示没有数据记录，文件头仍可用时可单独查询启动时间。见[加载错误码](load-errors.md)。Python 调用方可捕获该异常。支持的 1,985 个字段见[完整目录](fields.md)。通道绑定和数量约束见[字段目录的动态通道说明](fields.md#动态通道)。
 
 ## 内置时间格式与组合列
 
 时间格式由解析代码自动处理，无需调用方查询精度或拼接时间字符串。普通精度显示 `hh:mm:ss`，高精度显示 `hh:mm:ss.fff`。测试时间超过一天使用天数前缀，如 `1-01:00:00.000`；工步时间和步骤时间使用累计小时，如 `25:00:00.000`。日期时间与这些时长分别处理。
-
-Excel 时长使用可计算的数值和对应的时间格式，超过 24 小时仍显示累计小时；负时长显示带符号的文本。缺值保持为空。
 
 以下组合列可用 `iter_export_rows` 按 ID 选择，按请求顺序返回，不会自动增加重复的名称列：
 
@@ -94,7 +91,7 @@ Excel 时长使用可计算的数值和对应的时间格式，超过 24 小时�
 
 `process_files(paths, process)` 为整批加载一次 DLL，按首次出现的顺序处理去重后的绝对路径。每个文件只创建一个数据句柄，回调内完成文件头查询、导出和汇总，释放后再处理下一份文件。回调返回值可以是任意 Python 对象。文件句柄和行迭代器的有效期到回调结束。
 
-以下回调同时导出电压、电流并求最大测试时间。`on_row(number, values)` 收到从 1 开始的原记录行号和按 `summary_ids` 顺序排列的值。SDK 每行只读取导出字段与统计字段的并集一次。省略 `summary_ids` 时，CSV 回调按调用方的 `ids` 顺序收值，Excel 回调按记录表的列顺序收值。`number` 是从 1 开始的原记录号。数值字段保留原单位和精度，时长为秒，原生 `Rec.Index` 从 0 开始，组合列的归属序号从 1 开始。若只需统计，直接迭代 `f.iter_rows(...)`。请用 `f.columns(...)` 确认实际单位后再跨文件合并数值。
+以下回调同时导出电压、电流并求最大测试时间。`on_row(number, values)` 收到从 1 开始的原记录行号和按 `summary_ids` 顺序排列的值。SDK 每行只读取导出字段与统计字段的并集一次。省略 `summary_ids` 时，CSV 回调按调用方的 `ids` 顺序收值。`number` 是从 1 开始的原记录号。数值字段保留原单位和精度，时长为秒，原生 `Rec.Index` 从 0 开始，组合列的归属序号从 1 开始。若只需统计，直接迭代 `f.iter_rows(...)`。请用 `f.columns(...)` 确认实际单位后再跨文件合并数值。
 
 ```python
 from land_cex import process_files
@@ -120,33 +117,13 @@ results = process_files(outputs.keys(), process)
 print(results)
 ```
 
-`process_files` 返回每份文件的 `file`、`ok`、`data` 或 `error`，SDK 告警放在 `warning`。回调抛出的普通异常记入该文件的 `error` 后继续处理下一份。CSV 和 XLSX 在本文件的回调成功并关闭句柄后按请求顺序发布。回调失败时清理暂存输出。若文件发布阶段遇到重名或磁盘错误，`error.failed_output` 指出失败路径，`error.published_outputs` 列出已成功生成的路径。只需要各文件的头信息时可传 `metadata_only=True`。
+`process_files` 返回每份文件的 `file`、`ok`、`data` 或 `error`，SDK 告警放在 `warning`。回调抛出的普通异常记入该文件的 `error` 后继续处理下一份。CSV 在本文件的回调成功并关闭句柄后按请求顺序发布。回调失败时清理暂存输出。若文件发布阶段遇到重名或磁盘错误，`error.failed_output` 指出失败路径，`error.published_outputs` 列出已成功生成的路径。只需要各文件的头信息时可传 `metadata_only=True`。
 
-CSV 首列统一为记录序号。显式选择 `16385` 时也只输出一次，区间导出保留原文件记录号。SDK 字段的表头取自 `GetDescriptionOfColumn` 和 `GetUnitNameOfColumn`，组合字段沿用 Excel 记录表的名称和单位。有单位时写作 `电压 (V)`，单位为空时仅写列名。显示名为空时取 DLL 的 `ColumnID_to_Str` 名称。首列记录序号从 1 开始，CSV 返回的 `columns` 中保留数值 ID 供程序关联。
+CSV 首列统一为记录序号。显式选择 `16385` 时也只输出一次，区间导出保留原文件记录号。SDK 字段的表头取自 `GetDescriptionOfColumn` 和 `GetUnitNameOfColumn`，组合字段使用内置名称和对应源字段的单位。有单位时写作 `电压 (V)`，单位为空时仅写列名。显示名为空时取 DLL 的 `ColumnID_to_Str` 名称。首列记录序号从 1 开始，CSV 返回的 `columns` 中保留数值 ID 供程序关联。
 
-## 四表 Excel 和逐条记录统计
+## 自定义表格
 
-```python
-from cex_excel import export_xlsx
-from land_cex import open_cex
-
-with open_cex(source) as f:
-    summary = {"valid_voltage": 0, "max_test_time_s": None}
-
-    def observe(number, values):
-        voltage, seconds = values
-        summary["valid_voltage"] += voltage is not None
-        if seconds is not None:
-            previous = summary["max_test_time_s"]
-            summary["max_test_time_s"] = seconds if previous is None else max(previous, seconds)
-
-    result = export_xlsx(f, destination, on_row=observe, summary_ids=[16392, 16386])
-print(result["tables"], summary)
-```
-
-Excel 在写记录表时每条记录调用一次 `observe`。统计字段既可与导出列重合，也可选同层可读的其他 SDK 字段。
-
-默认导出充电、放电各 1、2 号平台。用户确认额外配置的方向和槽位后，例如仅追加充电 3 号和放电 4 号，调用 `export_xlsx(f, destination, extra_platforms={"charge": [3], "discharge": [4]})`。自定义导出把同一个 `extra_platforms` 传给 `export_columns` 和 `iter_export_rows`。
+默认导出充电、放电各 1、2 号平台。用户确认额外平台后，将同一个 `extra_platforms` 传给 `export_columns` 和 `iter_export_rows`，例如 `{"charge": [3], "discharge": [4]}`。
 
 公开导出序号从 1 开始，三张表可按循环序号、工步序号关联。`iter_rows` 提供原始 SDK 数值，`iter_export_rows` 提供展示值。记录 CSV 的时间列采用展示格式，`on_row` 仍收到原始数值供统计。
 
@@ -158,6 +135,6 @@ with open_cex(source) as f:
         print(step, started, ended)
 ```
 
-信息表按本机时区显示起止时间。“结束时间（估计）”取自 `GetEndTime`。完整加载时，SDK 根据最后一条记录的系统时间取整到秒。`GetActMaterialMass` 返回质量（g），并通过输出指针返回标称比容量（mAh/g）。信息表将质量换算成 mg，SDK 的未设置值 0 在表内留空。电池条码与电池批号按文本写入，保留前导零。
+`GetEndTime` 返回估计结束时间；完整加载时取最后一条记录的系统时间并取整到秒。`GetActMaterialMass` 返回质量（g）及标称比容量（mAh/g），`f.info("active_material")` 保留原始数值。表格中的单位换算、日期格式和布局按用户需求处理；条码与批号按文本保留前导零。
 
-三张数据表最多各容纳 1,048,575 条数据及一行表头。[字段目录](fields.md) · [运行环境](platform.md)
+[字段目录](fields.md) · [运行环境](platform.md)

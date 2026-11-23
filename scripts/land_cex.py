@@ -1,7 +1,5 @@
 """Direct Python access to a LANDCex handle owned by a single task."""
 
-import _deps  # noqa: F401
-
 from contextlib import ExitStack, contextmanager
 from threading import Lock, get_ident
 

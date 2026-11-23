@@ -1,7 +1,7 @@
 ---
 name: land-cex
-description: 解析 LAND 电池测试文件（.cex）。查询启动时间、电池条码和批号，读取循环、工步及记录，批量汇总或导出电压、电流等字段到 CSV 或 Excel。
-compatibility: 解析需要 Windows 版 Python 3.12 和 comtypes，导出 Excel 还需 openpyxl。Linux 使用 Wine 运行 Windows 版 Python。
+description: 解析 LAND 电池测试文件（.cex）。查询启动时间、电池条码和批号，读取循环、工步及记录，读取电压、电流等字段并导出 CSV，供 Agent 按用户要求汇总和制作表格。
+compatibility: 解析需要 Windows 版 Python 3.12 和 comtypes。Linux 使用 Wine 运行 Windows 版 Python。
 ---
 
 # LAND CEX 解析
@@ -12,14 +12,14 @@ compatibility: 解析需要 Windows 版 Python 3.12 和 comtypes，导出 Excel 
 
 - 工步时间 `8195`、测试时间 `16386`、步骤时间 `16387` 使用 `Auto(h:m:s)`，按文件精度显示秒或毫秒。自定义表格也用 `f.iter_export_rows(...)` 取展示值，不直接输出原始秒数。
 - 工步模式 `8194` 在原列中通过 `GetDescriptionOfMode` 转为工步名称，不保留数字模式码、不额外增加名称列。用户明确要求原始模式码时才取原值。
-- `f.iter_rows(...)` 和 `on_row` 回调的原始数值用于计算。计算结果交给用户时，时长按时分秒显示；只有用户明确要求数值秒时才输出秒数。Excel 使用 `cex_excel.export_xlsx` 保留时长单元格格式。
+- `f.iter_rows(...)` 和 `on_row` 回调的原始数值用于计算。计算结果交给用户时，时长按时分秒显示；只有用户明确要求数值秒时才输出秒数。
 
 | 用户需求 | Python 入口 |
 |---|---|
 | 只查启动时间、电池条码、电池批号或活性物质 | `with open_cex(path, metadata_only=True) as f`，用 `f.info(...)` 查文件头 |
 | 展示工步名称、时长、序号或归属 | `f.iter_export_rows(level, ids)` 返回已格式化的展示值。`f.export_columns(level)` 给出可选列及表头 |
 | 计算平均值、最大值或时长 | `f.iter_rows(ids)` 返回 SDK 原始值，用 `f.columns(ids)` 查本文件的单位 |
-| 导出文件 | 记录明细用 `f.export_csv(output, ids)`。四表 Excel 用 `cex_excel.export_xlsx(f, output)`。两种格式都支持通过 `on_row` 和 `summary_ids` 在写记录时汇总 |
+| 导出文件 | 记录明细用 `f.export_csv(output, ids)`，可通过 `on_row` 和 `summary_ids` 在写记录时汇总。其他表格按用户指定的字段、顺序和样式，由 Agent 使用读取结果生成 |
 
 ```python
 from land_cex import open_cex

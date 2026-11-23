@@ -1,7 +1,5 @@
 """Windows SDK bindings and resource lifetime for LANDCex."""
 
-import _deps  # noqa: F401
-
 import ctypes as C
 from ctypes import wintypes as W
 from contextlib import contextmanager, chdir
@@ -10,8 +8,15 @@ import math
 import os
 from pathlib import Path
 import shutil
+import sys
 import tempfile
 import uuid
+
+
+# Use the dependency installed from the bundled wheel.
+_dependencies = Path(__file__).resolve().parents[1] / "deps" / "1"
+if _dependencies.is_dir():
+    sys.path.insert(0, str(_dependencies))
 
 
 class CexError(Exception):

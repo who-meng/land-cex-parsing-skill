@@ -2,7 +2,7 @@
 
 ## Windows
 
-按 **Python 进程位数** 选择 DLL。`py -3.12-64` 使用 `windows-x64/LANDCex_x64.dll`，`py -3.12-32` 使用 `windows-x86/LANDCex_32.dll`。`land_cex` 自动选择并加载同目录的 `LANHE.sys`。用所选解释器运行 `-B scripts/install-deps.py`。`comtypes` 提供 COM 数据类型，`openpyxl` 用于导出含测试信息、循环、工步、记录四张工作表的 Excel 文件。
+按 **Python 进程位数** 选择 DLL。`py -3.12-64` 使用 `windows-x64/LANDCex_x64.dll`，`py -3.12-32` 使用 `windows-x86/LANDCex_32.dll`。`land_cex` 自动选择并加载同目录的 `LANHE.sys`。用所选解释器运行 `-B scripts/install-deps.py`。`comtypes` 提供 DLL 接口使用的 COM 数据类型。
 
 ## Linux（x86-64 主机）
 
@@ -37,14 +37,13 @@ INSTALL_DEPS="$(winepath -w "$SKILL/scripts/install-deps.py")"
 wine "$PYWIN" -B "$INSTALL_DEPS"
 SCRIPTS="$(winepath -w "$SKILL/scripts")"
 INPUT="$(winepath -w '/data/_041_1.cex')"
-OUTPUT="$(winepath -w '/data/output/_041_1.xlsx')"
+OUTPUT="$(winepath -w '/data/output/_041_1.csv')"
 wine "$PYWIN" -X utf8 -B - "$SCRIPTS" "$INPUT" "$OUTPUT" <<'PY'
 import sys
 sys.path.insert(0, sys.argv[1])
 from land_cex import open_cex
-from cex_excel import export_xlsx
 with open_cex(sys.argv[2]) as f:
-    print(export_xlsx(f, sys.argv[3]))
+    print(f.export_csv(sys.argv[3], [16392, 16388]))
 PY
 ```
 
