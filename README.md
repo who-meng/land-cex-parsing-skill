@@ -1,37 +1,35 @@
 # LAND CEX Parsing Skill
 
-此包包含 Skill 文档、Python 解析脚本、Windows x86/x64 LANDCex DLL、LANHE.sys，以及 comtypes 的离线安装包。Python 解释器需预先安装，推荐 Windows Python 3.12。
+通过 Python 调用 LANDCex DLL 获取电池测试数据。技能包含 x86/x64 DLL、LANHE.sys、离线 comtypes 依赖、DLL 绑定脚本和字段说明。数据如何统计、导出成什么文件、采用什么表格样式，由 Agent 按客户要求编写任务代码。
 
-读取和导出时自动处理显示格式：工步时间、测试时间和步骤时间显示为时分秒，按文件精度保留毫秒；工步模式在原列中显示工步名称。
-
-Skill 及配套依赖统一从 [who-meng/land-cex-parsing-skill](https://github.com/who-meng/land-cex-parsing-skill) 下载，解析时使用本地 DLL。
-
-支持 GitHub 技能安装的 Agent 客户端可填写仓库地址 `https://github.com/who-meng/land-cex-parsing-skill`。也可[下载完整 ZIP](https://github.com/who-meng/land-cex-parsing-skill/archive/refs/heads/main.zip)，解压后将 `land-cex-parsing-skill-main` 文件夹改名为 `land-cex`，再导入客户端。更新时重新下载完整包。
+从 [GitHub 仓库](https://github.com/who-meng/land-cex-parsing-skill) 安装，或[下载完整 ZIP](https://github.com/who-meng/land-cex-parsing-skill/archive/refs/heads/main.zip)，解压后将目录改名为 `land-cex` 并导入 Agent 客户端。更新时替换完整包。
 
 ## 首次使用
 
-在解压得到的 land-cex 目录中执行：
+预先安装 Windows Python 3.12，在技能目录运行：
 
 ```powershell
-py -3.12 -B scripts/install-deps.py
+py -3.12 -m pip --isolated install --no-index --no-deps --no-compile --target ./deps/1 ./wheels/comtypes-1.4.15-py3-none-any.whl
 ```
 
-此命令只从包内 wheels 安装依赖到本包 deps/1，不访问 PyPI。随后将 land-cex 导入 Agent 客户端。若使用 32 位 Python，改用 `py -3.12-32` 执行同一命令。
+使用 32 位 Python 时改为 `py -3.12-32`。此命令仅从包内 wheel 安装 comtypes 到 `deps/1`，不访问 PyPI。首次配置执行一次，正常解析无需重复安装。DLL 位数随 Python 进程位数选择；Linux 使用 Wine 内的 Windows Python，详见[环境说明](references/platform.md)。
 
-Agent 将 scripts 加入 Python 模块搜索路径，通过 `from land_cex import open_cex` 使用解析接口。DLL 位数由运行 Python 的位数决定。Linux 仍需 Wine 内的 Windows Python，本包不提供 Linux 原生解析器。
+## 读取示例
 
-## 读取数据
-
-Agent 直接运行 Python，读取结果是 Python 对象。例如读取工步模式和工步时间：
+Agent 将 `scripts` 加入 Python 模块搜索路径后，直接使用 DLL 方法：
 
 ```python
-from land_cex import open_cex
+from native_cex import native_runtime
 
-with open_cex(r"D:\data\test.cex") as f:
-    for mode, duration in f.iter_export_rows("step", [8194, 8195]):
-        print(mode, duration)
+with native_runtime() as sdk:
+    with sdk.open(r"D:\data\test.cex") as handle:
+        sdk.check_column(handle, 16392)
+        if sdk.GetRows(handle, 16392) > 0:
+            voltage = sdk.value(sdk.GetDataEx, handle, 16392, 0)
+            unit = sdk.value(sdk.GetUnitNameOfColumn, handle, 16392)
+            print(voltage, unit)
 ```
 
-文件加载、句柄释放、模式名称及时间格式均由脚本处理。需要其他 DLL 功能时，可在同一会话内通过 `sdk, handle = f.native` 调用。
+脚本处理 DLL 加载、原生类型和句柄释放。时间及工步模式的展示转换使用 `sdk.display_value`，保留原始值供计算。
 
-[使用规则](SKILL.md) · [Python 接口](references/python-api.md) · [字段目录](references/fields.md)
+[技能使用规则](SKILL.md) · [DLL 调用示例](references/python-api.md) · [字段目录](references/fields.md)

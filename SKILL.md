@@ -1,40 +1,33 @@
 ---
 name: land-cex
-description: 解析 LAND 电池测试文件（.cex）。查询启动时间、电池条码和批号，读取循环、工步及记录，读取电压、电流等字段并导出 CSV，供 Agent 按用户要求汇总和制作表格。
-compatibility: 解析需要 Windows 版 Python 3.12 和 comtypes。Linux 使用 Wine 运行 Windows 版 Python。
+description: 通过 LANDCex DLL 读取 LAND 电池测试文件（.cex）的循环、工步、记录、单位、条码、批号和活性物质数据，供 Agent 按用户要求处理。
+compatibility: 需要 Windows Python 3.12 和 comtypes；支持 x86/x64。Linux 使用 Wine 运行 Windows Python。
 ---
 
-# LAND CEX 解析
+# LAND CEX 数据访问
 
-将本技能目录下的 `scripts` 加入 Python 模块搜索路径，通过 `land_cex` 直接调用 DLL。输入、输出使用绝对路径。首次配置见[安装与环境自检](README.md)。
-
-面向用户展示和导出的数据由解析代码自动应用以下规则，无需另行格式化：
-
-- 工步时间 `8195`、测试时间 `16386`、步骤时间 `16387` 使用 `Auto(h:m:s)`，按文件精度显示秒或毫秒。自定义表格也用 `f.iter_export_rows(...)` 取展示值，不直接输出原始秒数。
-- 工步模式 `8194` 在原列中通过 `GetDescriptionOfMode` 转为工步名称，不保留数字模式码、不额外增加名称列。用户明确要求原始模式码时才取原值。
-- `f.iter_rows(...)` 和 `on_row` 回调的原始数值用于计算。计算结果交给用户时，时长按时分秒显示；只有用户明确要求数值秒时才输出秒数。
-
-| 用户需求 | Python 入口 |
-|---|---|
-| 只查启动时间、电池条码、电池批号或活性物质 | `with open_cex(path, metadata_only=True) as f`，用 `f.info(...)` 查文件头 |
-| 展示工步名称、时长、序号或归属 | `f.iter_export_rows(level, ids)` 返回已格式化的展示值。`f.export_columns(level)` 给出可选列及表头 |
-| 计算平均值、最大值或时长 | `f.iter_rows(ids)` 返回 SDK 原始值，用 `f.columns(ids)` 查本文件的单位 |
-| 导出文件 | 记录明细用 `f.export_csv(output, ids)`，可通过 `on_row` 和 `summary_ids` 在写记录时汇总。其他表格按用户指定的字段、顺序和样式，由 Agent 使用读取结果生成 |
+将本技能的 `scripts` 加入 Python 搜索路径，从 `native_cex` 导入 `native_runtime`。首次配置见 [README](README.md)。技能负责调用 DLL 获取数据，字段选择、统计、文件格式、表头和排布由 Agent 按用户需求决定。
 
 ```python
-from land_cex import open_cex
+from native_cex import native_runtime
 
-with open_cex(source) as f:
-    ids = [c["id"] for c in f.export_columns("rec")]
-    report = f.export_csv(destination, ids)
-print(report["output"], report["rows"])
+with native_runtime() as sdk:
+    with sdk.open(source) as handle:
+        column_id = 16392
+        sdk.check_column(handle, column_id)
+        count = sdk.GetRows(handle, column_id)
+        unit = sdk.value(sdk.GetUnitNameOfColumn, handle, column_id)
+        if count > 0:
+            value = sdk.value(sdk.GetDataEx, handle, column_id, 0)
 ```
 
-- 同一文件的读取、统计和导出共用一个会话。多文件用 `process_files(paths, process)`，每份 CEX 的回调成功结束并关闭句柄后发布文件。
-- 循环平台默认导出充电、放电各 1、2 号，“导出全部”也按此处理。用户明确提到配置了更多平台时，确认方向和槽位后，用 `extra_platforms` 追加指定的 3～5 号。
-- 文件加载失败时，向客户提示“文件名：加载失败”。客户询问原因时，用中文解释 `native_message`；必要时查[加载错误码](references/load-errors.md)。原生码供排查，未知原因不要猜测。批量处理时指出具体失败的文件。
-- 需要底层 DLL 接口和当前句柄时使用 `sdk, handle = f.native`。
+- 输入文件使用绝对路径；在进入 `native_runtime()` 前确定所有输入、输出路径。SDK 工作期间会临时改变工作目录。同一进程一次使用一个运行时，句柄仅在所属 `with` 中、当前线程使用。
+- `sdk.open(source)` 默认单位方案为 Auto；可传 `unit_scheme=0/1/2` 分别选择 mA/A/uA。概要查询用 `brief=True`。数据对象自动释放，多文件可在同一个运行时内依次打开。
+- 从[字段目录](references/fields.md)匹配用户需求。字段含义、层级、通道或单位有歧义时先向用户确认，不猜 ID。每个字段在读取前调用一次 `check_column`，检查未知 ID 和未绑定辅助通道。
+- 循环、工步、记录的原生行索引各自从 **0** 开始。用 `GetRows` 确定边界，不按相同行号拼接不同层级；需要关联时调用 DLL 的定位接口。
+- 计算使用 `sdk.value(...)` 的原始值；面向用户展示时使用 `sdk.display_value(handle, column_id, value)`。工步模式 `8194` 转为名称，时间字段按文件精度转为时分秒；不额外添加名称列。用户明确要求原始码或秒数时保留原值。
+- 查询实际单位后再解释或合并数据。SDK 返回零就保留零，不自行断言零表示无效；缺值 `None` 与零分开处理。
+- 大量数据逐条读取并由任务代码写入用户指定的文件，不把全部明细打印到 Agent 上下文。逐条读取不会消除 DLL 的 `LoadData` 全量加载内存占用。
+- 加载失败时提示“文件名：加载失败”。客户询问原因时依据异常的 `native_code`、`native_message` 和[错误说明](references/load-errors.md)解释，未知原因不猜测。
 
-[Python 参数和批量示例](references/python-api.md) · [字段 ID 目录](references/fields.md) · [Windows / Wine 运行环境](references/platform.md)
-
-- 从 [官方仓库](https://github.com/who-meng/land-cex-parsing-skill) 安装完整技能包，包含 x86/x64 DLL、LANHE.sys 与离线 Python 依赖。首次使用执行 `python scripts/install-deps.py`，只安装包内 wheel。解析只使用包内运行时，不发起 DLL 下载或远端更新检查。
+[DLL 调用示例](references/python-api.md) · [字段目录](references/fields.md) · [Windows / Wine 环境](references/platform.md)

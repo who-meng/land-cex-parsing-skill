@@ -2,8 +2,9 @@
 
 import ctypes as C
 from ctypes import wintypes as W
-from contextlib import contextmanager, chdir
+from contextlib import ExitStack, contextmanager, chdir
 import hashlib
+import json
 import math
 import os
 from pathlib import Path
@@ -11,6 +12,7 @@ import shutil
 import sys
 import tempfile
 import uuid
+from threading import Lock
 
 
 # Use the dependency installed from the bundled wheel.
@@ -31,7 +33,8 @@ DLLS = {
     8: ("x64", "LANDCex_x64.dll", "af75c22b0494068df90e3152c1a378ca2e1da1a4dc3fcf9c54b82ca0b1f5663f"),
 }
 SYS_HASH = "761dcae76898ab25fc17feec13c014d86c3d353536a42acc3cdb3eabeeecb4f4"
-CHANNEL_TYPES = ("voltage", "force", "temperature", "pressure", "thickness")
+_task_lock = Lock()
+DURATIONS = frozenset((4122, 4123, 8195, 16386, 16387, *range(4656, 4661), *range(4720, 4725)))
 
 
 def bind(library, name, result, *arguments):
@@ -84,55 +87,59 @@ def isolated_user():
 
 @contextmanager
 def native_runtime():
-    from _ctypes import FreeLibrary
-    try:
-        from comtypes import automation
-    except ImportError as error:
-        raise CexError("E_DEPENDENCY", "Install comtypes for the selected Python interpreter.") from error
-
-    arch, dll_name, dll_hash = DLLS[C.sizeof(C.c_void_p)]
-    runtime = Path(__file__).resolve().parents[1] / "runtime" / ("windows-" + arch)
-    base = Path(tempfile.gettempdir()).resolve(strict=True)
-    with tempfile.TemporaryDirectory(prefix="land-cex-python-", dir=base) as folder:
-        work = Path(folder).resolve(strict=True)
-        if work.parent != base:
-            raise CexError("E_LOAD_FAILED", "Invalid SDK working directory.")
-        for name, expected in ((dll_name, dll_hash), ("LANHE.sys", SYS_HASH)):
-            try:
-                data = (runtime / name).read_bytes()
-            except OSError as error:
-                raise CexError("E_DLL_INCOMPATIBLE", f"Packaged SDK dependency is unavailable: {name}.") from error
-            if hashlib.sha256(data).hexdigest() != expected:
-                raise CexError("E_DLL_INCOMPATIBLE", f"Packaged SDK dependency has an unexpected hash: {name}.")
-            (work / name).write_bytes(data)
-
-        kernel = C.WinDLL("kernel32", use_last_error=True)
-        get_locale = bind(kernel, "GetThreadLocale", W.DWORD)
-        set_locale = bind(kernel, "SetThreadLocale", W.BOOL, W.DWORD)
-        old_locale = get_locale()
-        if not set_locale(0x0804):
-            raise CexError("E_LOAD_FAILED", "Could not set the SDK text locale.", native_api="SetThreadLocale",
-                           native_code=C.get_last_error())
-        old_env = {key: os.environ.get(key) for key in ("TEMP", "TMP")}
+    if not _task_lock.acquire(blocking=False):
+        raise CexError("E_SESSION_BUSY", "Use one SDK runtime per Python process.")
+    with ExitStack() as cleanup:
+        cleanup.callback(_task_lock.release)
+        from _ctypes import FreeLibrary
         try:
-            os.environ.update(TEMP=str(work), TMP=str(work))
-            with chdir(work), isolated_user():
+            from comtypes import automation
+        except ImportError as error:
+            raise CexError("E_DEPENDENCY", "Install comtypes for the selected Python interpreter.") from error
+
+        arch, dll_name, dll_hash = DLLS[C.sizeof(C.c_void_p)]
+        runtime = Path(__file__).resolve().parents[1] / "runtime" / ("windows-" + arch)
+        base = Path(tempfile.gettempdir()).resolve(strict=True)
+        with tempfile.TemporaryDirectory(prefix="land-cex-python-", dir=base) as folder:
+            work = Path(folder).resolve(strict=True)
+            if work.parent != base:
+                raise CexError("E_LOAD_FAILED", "Invalid SDK working directory.")
+            for name, expected in ((dll_name, dll_hash), ("LANHE.sys", SYS_HASH)):
                 try:
-                    library = C.WinDLL(str(work / dll_name), winmode=0x100 | 0x800)
+                    data = (runtime / name).read_bytes()
                 except OSError as error:
-                    raise CexError("E_DLL_INCOMPATIBLE", str(error), native_api="LoadLibraryExW",
-                                   native_code=error.winerror) from error
-                try:
-                    yield NativeCex(library, work, automation)
-                finally:
-                    FreeLibrary(library._handle)
-        finally:
-            for key, value in old_env.items():
-                if value is None:
-                    os.environ.pop(key, None)
-                else:
-                    os.environ[key] = value
-            set_locale(old_locale)
+                    raise CexError("E_DLL_INCOMPATIBLE", f"Packaged SDK dependency is unavailable: {name}.") from error
+                if hashlib.sha256(data).hexdigest() != expected:
+                    raise CexError("E_DLL_INCOMPATIBLE", f"Packaged SDK dependency has an unexpected hash: {name}.")
+                (work / name).write_bytes(data)
+
+            kernel = C.WinDLL("kernel32", use_last_error=True)
+            get_locale = bind(kernel, "GetThreadLocale", W.DWORD)
+            set_locale = bind(kernel, "SetThreadLocale", W.BOOL, W.DWORD)
+            old_locale = get_locale()
+            if not set_locale(0x0804):
+                raise CexError("E_LOAD_FAILED", "Could not set the SDK text locale.", native_api="SetThreadLocale",
+                               native_code=C.get_last_error())
+            old_env = {key: os.environ.get(key) for key in ("TEMP", "TMP")}
+            try:
+                os.environ.update(TEMP=str(work), TMP=str(work))
+                with chdir(work), isolated_user():
+                    try:
+                        library = C.WinDLL(str(work / dll_name), winmode=0x100 | 0x800)
+                    except OSError as error:
+                        raise CexError("E_DLL_INCOMPATIBLE", str(error), native_api="LoadLibraryExW",
+                                       native_code=error.winerror) from error
+                    try:
+                        yield NativeCex(library, work, automation)
+                    finally:
+                        FreeLibrary(library._handle)
+            finally:
+                for key, value in old_env.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+                set_locale(old_locale)
 
 
 class NativeCex:
@@ -189,9 +196,18 @@ class NativeCex:
         self.EnableSilentForLoadData(True)
         # Supported scalar types returned by the SDK.
         self.scalar_types = {0, 1, 2, 3, 4, 5, 7, 8, 11, 16, 17, 18, 19, 20, 21, 22, 23}
+        with Path(__file__).with_name("fields.json").open(encoding="ascii") as stream:
+            self._fields = {entry[0]: entry for entry in json.load(stream)}
 
     @contextmanager
-    def open(self, source, unit_scheme, *, brief=False):
+    def open(self, source, unit_scheme=-1, *, brief=False):
+        source = Path(source)
+        if not source.is_absolute() or source.suffix.lower() not in (".cex", ".icex"):
+            raise CexError("E_INVALID_REQUEST", "Expected an absolute CEX or ICEX path.")
+        if not source.is_file():
+            raise CexError("E_INPUT_NOT_FOUND", "Input data file does not exist.")
+        if type(unit_scheme) is not int or unit_scheme not in (-1, 0, 1, 2):
+            raise CexError("E_INVALID_REQUEST", "Expected SDK unit scheme -1, 0, 1 or 2.")
         with tempfile.TemporaryDirectory(prefix="data-", dir=self.work) as directory:
             staged = Path(directory) / ("input" + source.suffix.lower())
             shutil.copyfile(source, staged)
@@ -244,40 +260,37 @@ class NativeCex:
             return self.GetDataOfAuxChls(handle, 0, channel_type, None, None, None)
         return self.GetDataOfExAuxChls(handle, 0, channel_type, None)
 
-    def file_item(self, handle, item):
-        if item in ("start_time", "end_time"):
-            api = self.GetStartTime if item == "start_time" else self.GetEndTime
-            seconds = api(handle)
-            return None if seconds == -1 else seconds
-        if item in ("barcode", "batch_no"):
-            api = self.GetBattNo if item == "barcode" else self.GetBattBatchNo
-            return self.value(api, handle)
-        if item == "active_material":
-            capacity = C.c_float()
-            mass = self.GetActMaterialMass(handle, C.byref(capacity))
-            return {"mass_g": mass, "nominal_specific_capacity_mah_g": capacity.value}
-        if item == "channel":
-            box, channel = C.c_uint8(), C.c_uint8()
-            if self.GetChannelEx(handle, C.byref(box), C.byref(channel), None, None):
-                return f"{box.value + 1:03d}_{channel.value + 1}"
+    def check_column(self, handle, column_id):
+        """Validate one native field before reading; do not infer validity from row count."""
+        if type(column_id) is not int or column_id not in self._fields:
+            raise CexError("E_UNKNOWN_COLUMN", f"Unknown field ID: {column_id}.")
+        _, _, group, kind, channel = self._fields[column_id]
+        if group >= 0 and channel > self.count(handle, group, kind):
+            raise CexError("E_CHANNEL_UNBOUND", "Channel is not bound.")
+
+    def display_value(self, handle, column_id, value):
+        """Format one SDK value for presentation without selecting or assembling columns."""
+        if value is None:
             return None
-        if item in ("channel_note", "vi_range"):
-            api = self.GetChlNote if item == "channel_note" else self.GetDescriptionOfVIRange
-            return self.value(api, handle)
-        group = int(item == "exaux_counts")
-        return {name: self.count(handle, group, index) for index, name in enumerate(CHANNEL_TYPES[:4 + group])}
+        if column_id == 8194:
+            return self.value(self.GetDescriptionOfMode, value)
+        if column_id in DURATIONS:
+            return format_duration(value, column_id, self.IsTimeHighResolution(handle))
+        return value
 
-    def rows(self, handle, level_id):
-        rows = self.GetRows(handle, level_id)
-        if rows < 0:
-            raise CexError("E_INTERNAL", "Invalid SDK row count.")
-        return rows
 
-    def column(self, handle, field_id, items):
-        data = {"id": field_id}
-        for item in items:
-            if item == "unit":
-                data[item] = self.value(self.GetUnitNameOfColumn, handle, field_id)
-            else:
-                data[item] = self.value(self.GetDescriptionOfColumn, field_id)
-        return data
+def format_duration(seconds, field_id, high_resolution):
+    if seconds is None:
+        return None
+    magnitude = abs(seconds)
+    rounded = magnitude + (0.0005 if high_resolution else 0.5)
+    whole = int(rounded)
+    hours, remainder = divmod(whole, 3600)
+    minutes, sec = divmod(remainder, 60)
+    sign = "-" if seconds < 0 and magnitude >= 0.0005 else ""
+    days = ""
+    if field_id == 16386 and hours >= 24:
+        day_count, hours = divmod(hours, 24)
+        days = f"{day_count}-"
+    fractional = f".{int((rounded-whole)*1000):03d}" if high_resolution else ""
+    return f"{sign}{days}{hours:02d}:{minutes:02d}:{sec:02d}{fractional}"

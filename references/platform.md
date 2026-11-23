@@ -2,7 +2,7 @@
 
 ## Windows
 
-按 **Python 进程位数** 选择 DLL。`py -3.12-64` 使用 `windows-x64/LANDCex_x64.dll`，`py -3.12-32` 使用 `windows-x86/LANDCex_32.dll`。`land_cex` 自动选择并加载同目录的 `LANHE.sys`。用所选解释器运行 `-B scripts/install-deps.py`。`comtypes` 提供 DLL 接口使用的 COM 数据类型。
+按 **Python 进程位数** 选择 DLL。`py -3.12-64` 使用 `windows-x64/LANDCex_x64.dll`，`py -3.12-32` 使用 `windows-x86/LANDCex_32.dll`。`native_runtime` 自动选择并加载同目录的 `LANHE.sys`。首次使用按 [README](../README.md) 的 pip 命令安装包内依赖。`comtypes` 提供 DLL 接口使用的 COM 数据类型。
 
 ## Linux（x86-64 主机）
 
@@ -29,22 +29,24 @@ PYWIN='C:\Python312\python.exe'
 wine "$PYWIN" -c 'import sys,struct; print(sys.platform,struct.calcsize("P")*8)'
 ```
 
-`win32 64` 表示 Windows x64 Python，`win32 32` 表示 Windows x86 Python。下面从解压后的技能根目录执行。`winepath -w` 使用同一个 `WINEPREFIX`，把 Linux 端的脚本、源文件和输出路径转成 Windows Python 可见的绝对路径。输出目录需已存在。
+`win32 64` 表示 Windows x64 Python，`win32 32` 表示 Windows x86 Python。下面从解压后的技能根目录执行。`winepath -w` 使用同一个 `WINEPREFIX`，把 Linux 端的脚本和源文件路径转成 Windows Python 可见的绝对路径。
 
 ```bash
 SKILL="$(pwd)"
-INSTALL_DEPS="$(winepath -w "$SKILL/scripts/install-deps.py")"
-wine "$PYWIN" -B "$INSTALL_DEPS"
+WHEEL="$(winepath -w "$SKILL/wheels/comtypes-1.4.15-py3-none-any.whl")"
+DEPS="$(winepath -w "$SKILL/deps/1")"
+wine "$PYWIN" -m pip --isolated install --no-index --no-deps --no-compile --target "$DEPS" "$WHEEL"
 SCRIPTS="$(winepath -w "$SKILL/scripts")"
 INPUT="$(winepath -w '/data/_041_1.cex')"
-OUTPUT="$(winepath -w '/data/output/_041_1.csv')"
-wine "$PYWIN" -X utf8 -B - "$SCRIPTS" "$INPUT" "$OUTPUT" <<'PY'
+wine "$PYWIN" -X utf8 -B - "$SCRIPTS" "$INPUT" <<'PY'
 import sys
 sys.path.insert(0, sys.argv[1])
-from land_cex import open_cex
-with open_cex(sys.argv[2]) as f:
-    print(f.export_csv(sys.argv[3], [16392, 16388]))
+from native_cex import native_runtime
+with native_runtime() as sdk:
+    with sdk.open(sys.argv[2]) as handle:
+        sdk.check_column(handle, 16392)
+        print(sdk.GetRows(handle, 16392))
 PY
 ```
 
-`wine32 is missing` 表示当前 Wine 安装缺少传统 x86 支持。`Bad EXE format` 或 Windows 错误 193 时，先检查正在运行的 Python 位数和 DLL 架构。`ModuleNotFoundError` 时用上面的 `wine "$PYWIN" -B "$INSTALL_DEPS"` 为同一个解释器安装依赖。
+`wine32 is missing` 表示当前 Wine 安装缺少传统 x86 支持。`Bad EXE format` 或 Windows 错误 193 时，先检查正在运行的 Python 位数和 DLL 架构。`ModuleNotFoundError` 时用上面的离线 pip 命令为同一个解释器安装依赖。
