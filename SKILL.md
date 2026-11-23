@@ -18,7 +18,7 @@ skill = Path.cwd().resolve()
 sys.path.insert(0, str(skill / "scripts"))
 from native_cex import native_runtime
 
-source = Path(r"D:\LAND\ReadCexTest\_001_1.cex")
+source = skill / "examples" / "_001_1.cex"
 
 with native_runtime() as sdk:
     with sdk.open(source) as handle:

@@ -4,7 +4,7 @@
 
 ## 加载和释放
 
-先在技能根目录执行下例初始化。后续代码块沿用这里的导入和 `source`，每个代码块自己打开并释放句柄。若从其他目录启动，将 `skill` 改为实际技能根目录的绝对路径。示例 CEX 仅供本机验证，不随包分发。
+先在技能根目录执行下例初始化。后续代码块沿用这里的导入和 `source`，每个代码块自己打开并释放句柄。若从其他目录启动，将 `skill` 改为实际技能根目录的绝对路径。示例读取包内的 [examples/_001_1.cex](../examples/_001_1.cex)；处理客户数据时替换 `source` 为实际文件的绝对路径。
 
 ```python
 import ctypes
@@ -16,7 +16,7 @@ skill = Path.cwd().resolve()
 sys.path.insert(0, str(skill / "scripts"))
 from native_cex import native_runtime, CexError
 
-source = Path(r"D:\LAND\ReadCexTest\_001_1.cex")
+source = skill / "examples" / "_001_1.cex"
 with native_runtime() as sdk:
     with sdk.open(source, unit_scheme=-1) as handle:
         count = sdk.GetRows(handle, 16392)

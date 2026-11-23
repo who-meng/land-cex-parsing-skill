@@ -37,7 +37,7 @@ WHEEL="$(winepath -w "$SKILL/wheels/comtypes-1.4.15-py3-none-any.whl")"
 DEPS="$(winepath -w "$SKILL/deps/1")"
 wine "$PYWIN" -m pip --isolated install --no-index --no-deps --no-compile --target "$DEPS" "$WHEEL"
 SCRIPTS="$(winepath -w "$SKILL/scripts")"
-INPUT="$(winepath -w '/data/_041_1.cex')"
+INPUT="$(winepath -w "$SKILL/examples/_001_1.cex")"
 wine "$PYWIN" -X utf8 -B - "$SCRIPTS" "$INPUT" <<'PY'
 import sys
 sys.path.insert(0, sys.argv[1])

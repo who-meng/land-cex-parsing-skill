@@ -29,7 +29,7 @@ py -3.12 -m pip --isolated install --no-index --no-deps --no-compile --target ./
 
 下面示例从包含 `SKILL.md` 的技能根目录运行，可保存为包外的 Python 脚本，用 `py -3.12 -X utf8 <脚本路径>` 执行。`Path.cwd()` 指向技能根目录；若从其他目录启动，请将 `skill` 改为实际安装的绝对路径。
 
-示例文件为 `D:\LAND\ReadCexTest\_001_1.cex`，它不包含在技能包中；客户使用时替换 `source` 为自己的文件路径。
+包内提供[示例文件](examples/_001_1.cex)，下面的代码可直接读取。处理自己的数据时，将 `source` 改为该文件的绝对路径。
 
 ```python
 import json
@@ -40,7 +40,7 @@ skill = Path.cwd().resolve()
 sys.path.insert(0, str(skill / "scripts"))
 from native_cex import CexError, native_runtime
 
-source = Path(r"D:\LAND\ReadCexTest\_001_1.cex")
+source = skill / "examples" / "_001_1.cex"
 try:
     with native_runtime() as sdk:
         with sdk.open(source) as handle:
