@@ -63,7 +63,7 @@ variant_type = variant.vt
 | 备注、量程描述 | `sdk.value(sdk.GetChlNote, handle)`、`sdk.value(sdk.GetDescriptionOfVIRange, handle)` |
 | 工步模式说明 | `sdk.value(sdk.GetDescriptionOfMode, mode)` |
 | 活性物质 | `GetActMaterialMass` 返回质量 g，输出指针返回标称比容量 mAh/g，示例见下 |
-| 通道 | `GetChannelEx` 使用箱号、通道号和其他原生输出指针；按 SDK 原值返回 |
+| 通道 | `GetChannelEx` 使用箱号、通道号和其他原生输出指针；成功后箱号、通道号分别加 1，作为面向用户的编号 |
 | 辅助通道数与值 | `GetDataOfAuxChls`、`GetDataOfExAuxChls`，详见[动态通道](fields.md#动态通道) |
 
 ```python
@@ -84,9 +84,11 @@ with native_runtime() as sdk:
 box = ctypes.c_uint8()
 channel = ctypes.c_uint8()
 ok = sdk.GetChannelEx(handle, ctypes.byref(box), ctypes.byref(channel), None, None)
+box_number = int(box.value) + 1 if ok else None
+channel_number = int(channel.value) + 1 if ok else None
 ```
 
-箱号和通道号原值从 0 开始；是否显示为从 1 开始的用户序号由任务决定，不由解析脚本拼接格式。
+箱号和通道号原值从 0 开始，面向用户统一显示上述从 1 开始的 `box_number` 和 `channel_number`。例如原值 `0 / 0` 显示为 `1 / 1`，原值 `40 / 0` 显示为 `41 / 1`。转换只执行一次；读取失败时两者为 `None`。使用 Python 整数做加法，不将展示编号写回 uint8 指针，避免 255 加 1 后溢出。
 
 ## 关联定位
 
